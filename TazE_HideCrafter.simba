@@ -1,0 +1,264 @@
+program hidecrafter;
+{$DEFINE SCRIPT_REVISION := '4'}
+{$I SRL-T/osr.simba}
+{$I WaspLib/osr.simba}
+
+begin
+  Login.PlayerIndex := 0;
+end;
+
+//=============DEFAULT SETTINGS==============
+var
+  WHAT_TO_CRAFT:    array of String            = ['Green', 'Body'];
+  SLEEP_HOUR:       String                     = '01:00:00';
+  USE_HUD_REPORT:   Boolean                    = False;
+  USE_GUI:          Boolean                    = True;
+  USE_ANITBAN:      Boolean                    = True;
+  USE_BREAKS:       Boolean                    = True;
+  USE_SLEEP:        Boolean                    = True;
+  USE_REMOTE_INPUT: Boolean                    = True;
+
+const
+  // Timing Constants (milliseconds)
+  DEPOSIT_WAIT_MIN = 50;
+  DEPOSIT_WAIT_MAX = 2000;
+  MAKE_WAIT_MIN    = 50;
+  MAKE_WAIT_MAX    = 3000;
+  TASK_WAIT        = 5000;
+
+
+type
+  EState = (LEVEL_UP,CLOSE_CONTEXT,OPEN_BANK,WITHDRAW_THREAD, WITHDRAW_NEEDLE,
+  WITHDRAW_LEATHER,DEPOSIT_HIDE, CLOSE_INTERFACE,CRAFT_HIDE, WAIT_CRAFT, OPEN_INVENTORY, END_SCRIPT);
+
+  TCurrentTask = record
+    Color: String;
+    ArmorType: String;
+  end;
+
+  THideCrafter = record(TBaseBankScript)
+    State: EState;
+    CurrentTask: TCurrentTask;
+    Needle,Thread,
+    LeatherMaterial,
+    FinalProduct: TRSBankItem;
+    MakeOption: String;
+    DoingTask: Boolean;
+    ItemCount: Integer;
+    Factor: Integer;
+  end;
+
+procedure THideCrafter.SetupItems();
+var
+  maxProducts: Integer;
+begin
+  Needle :=  TRSBankItem.Setup('Needle', 1 , False);
+  Thread := TRSBankItem.Setup('Thread', -1 , False);
+  CurrentTask := [WHAT_TO_CRAFT[0], WHAT_TO_CRAFT[1]];
+
+  // Convert to lowercase
+  CurrentTask.ArmorType := LowerCase(CurrentTask.ArmorType);
+
+  if CurrentTask.ArmorType = 'vambraces' then self.Factor := 1
+  else if CurrentTask.ArmorType = 'chaps' then self.Factor := 2
+  else if CurrentTask.ArmorType = 'body' then self.Factor := 3
+  else TerminateScript('Armor type not detected');
+
+  maxProducts := Trunc(26 / self.Factor);
+  LeatherMaterial := TRSBankItem.Setup(CurrentTask.Color + ' dragon leather', maxProducts * self.Factor, False);
+  MakeOption := CurrentTask.Color + " dragonhide " + CurrentTask.ArmorType;
+  FinalProduct := TRSBankItem.Setup(CurrentTask.Color + " d'hide " + CurrentTask.ArmorType, maxProducts * self.Factor);
+end;
+
+procedure TAntiban.Setup(); override;
+begin
+  Self.Skills := [ERSSkill.CRAFTING, ERSSkill.TOTAL];
+  Self.MinZoom := 15;
+  Self.MaxZoom := 85;
+  inherited;
+end;
+
+procedure THideCrafter.Init(MaxActions: UInt32; MaxTime: UInt64); override;
+var
+  MyPos: TPoint;
+begin
+  inherited;
+  WLSettings.Antiban.Enabled        := USE_ANITBAN;
+  WLSettings.Breaks                 := USE_BREAKS;
+  WLSettings.Sleep.Enabled          := USE_SLEEP;
+  WLSettings.sleep.Hour             := SLEEP_HOUR;
+  WLSettings.RemoteInput.Enabled    := USE_REMOTE_INPUT;
+  WLSettings.RemoteInput.HUDReport  := USE_HUD_REPORT;
+  Mouse.Speed                       := Random(18,24);
+  Mouse.Distribution                := MOUSE_DISTRIBUTION_GAUSS;
+  Self.PrintTimer.Init(2 * ONE_MINUTE);
+  Self.RSW.SetupNamedRegion();
+  Self.SetupItems();
+  MyPos := Self.RSW.GetMyPos();
+  Self.RSW.AdaptiveWalk := True;
+  if Options.GetBrightnessLevel < 100 then
+    Options.SetMaxBrightness;
+end;
+
+function THideCrafter.MakeHide(): Boolean;
+var
+  needleSlot, leatherSlot: Int32;
+  begin
+    XPBar.EarnedXP();
+    If Inventory.FindItem(Self.Needle.Item, needleSlot) then
+      If Inventory.FindItem(Self.LeatherMaterial.Item, leatherSlot) then
+        Inventory.Use(needleSlot, leatherSlot);
+
+    if Make.IsOpen(MAKE_WAIT_MAX) then
+     if Make.Select(Self.MakeOption, Make.QUANTITY_ALL, SRL.Dice(98.5))then
+        Result := WaitUntil(XPBar.EarnedXP(), MAKE_WAIT_MIN, MAKE_WAIT_MAX);
+    HoverBank();
+    Self.DoingTask := Result;
+end;
+
+function THideCrafter.Deposit(): Boolean;
+var
+  itemCount: Int32 := Inventory.CountItem(FinalProduct.Item);
+begin
+  if Result := bank.DepositItem(FinalProduct, True) then
+  begin
+    if WaitUntil(Inventory.CountItem(FinalProduct.Item) = 0, DEPOSIT_WAIT_MIN, DEPOSIT_WAIT_MAX) then
+    begin
+      Self.TotalActions += itemCount;
+    end;
+  end;
+end;
+
+function THideCrafter.CheckInventoryForItems(): Boolean;
+begin
+  Result := Inventory.ContainsAll([Self.Needle.Item, Self.Thread.Item, Self.LeatherMaterial.Item]) and
+            (Inventory.CountItem(LeatherMaterial.Item) >= self.Factor);
+end;
+
+function THideCrafter.HandleBankOpen(): EState;
+begin
+  if not Bank.ContainsItem(LeatherMaterial) or (Bank.CountItemStack(LeatherMaterial.Item) < Self.Factor) then
+    TerminateScript('Not enough ' + LeatherMaterial.Item + ' in bank.');
+  if Inventory.ContainsItem(Self.FinalProduct.Item) then Exit(EState.DEPOSIT_HIDE);
+  if not Inventory.ContainsItem(Self.Thread.Item) then Exit(EState.WITHDRAW_THREAD);
+  if not Inventory.ContainsItem(Self.Needle.Item) then Exit(EState.WITHDRAW_NEEDLE);
+  if not (Inventory.CountItem(LeatherMaterial.Item) >= self.Factor) then Exit(EState.WITHDRAW_LEATHER);
+  Exit(EState.CLOSE_INTERFACE);
+end;
+
+function THideCrafter.GetState(): EState;
+begin
+  if WL.Activity.IsFinished() then Exit(EState.END_SCRIPT);
+  if Chat.LeveledUp() then begin
+    Self.DoingTask := False;
+    Exit(EState.LEVEL_UP);
+  end;
+
+  if MainScreen.HasInterface() then
+  begin
+    DoingTask := False;
+    if Bank.IsOpen() then Exit(HandleBankOpen());
+  end;
+
+  if CheckInventoryForItems then
+  begin
+    if Self.DoingTask then Exit(EState.WAIT_CRAFT);
+    if not DoingTask then Exit(EState.CRAFT_HIDE);
+  end;
+
+  Exit(EState.OPEN_BANK);
+end;
+
+
+procedure THideCrafter.Run(MaxActions: UInt32; MaxTime: UInt64);
+begin
+  Self.Init(MaxActions, MaxTime);
+  repeat
+    State := Self.GetState();
+    Self.SetAction(ToStr(State));
+    case State of
+      EState.OPEN_BANK: Bank.WalkOpen();
+      EState.WITHDRAW_THREAD: Self.Withdraw(self.Thread);
+      EState.WITHDRAW_NEEDLE: Self.Withdraw(self.Needle);
+      EState.WITHDRAW_LEATHER: Self.Withdraw(self.LeatherMaterial);
+      EState.DEPOSIT_HIDE: Self.Deposit();
+      EState.OPEN_INVENTORY: Inventory.Open;
+      EState.LEVEL_UP: Chat.HandleLevelUp();
+      EState.CRAFT_HIDE: self.MakeHide();
+      EState.WAIT_CRAFT: Self.DoingTask := XPBar.WaitXP(TASK_WAIT);
+      EState.CLOSE_INTERFACE: MainScreen.CloseInterface(True);
+      EState.END_SCRIPT: Break;
+    end;
+    Self.DoAntiban();
+  until Self.ShouldStop();
+  if not Self.Terminate() then
+    TerminateScript(Self.Name + ' didn''t terminate properly. Stopping execution.');
+end;
+
+var
+  HideCrafter: THideCrafter;
+
+type
+  THideCrafterConfig = record(TScriptForm)
+    ColorSelector: TLabeledCombobox;
+    ArmorSelector: TLabeledCombobox;
+  end;
+
+procedure THideCrafterConfig.StartScript(sender: TObject); override;
+begin
+  HideCrafter.CurrentTask.Color := Self.ColorSelector.getText();
+  HideCrafter.CurrentTask.ArmorType := Self.ArmorSelector.getText();
+  inherited;
+end;
+
+procedure THideCrafterConfig.Run(); override;
+var
+  tab: TTabSheet;
+begin
+  Self.Setup('HideCrafter Config');
+  Self.Start.SetOnClick(@Self.StartScript);
+
+  Self.AddTab('Script Settings');
+  tab := Self.Tabs[High(Self.Tabs)];
+  Self.CreateAccountManager(tab);
+
+  with Self.ColorSelector do
+  begin
+    Create(tab);
+    SetCaption('Leather color:');
+    SetLeft(TControl.AdjustToDPI(50));
+    SetTop(TControl.AdjustToDPI(200));
+    SetStyle(csDropDownList);
+    AddItemArray(['Green', 'Blue', 'Red', 'Black']);
+    SetItemIndex(0); // default to the first item
+  end;
+
+  with Self.ArmorSelector do  // Corrected from ColorSelector to ArmorSelector
+  begin
+    Create(tab);
+    SetCaption('Armor type:');
+    SetLeft(TControl.AdjustToDPI(50));
+    SetTop(Self.ColorSelector.GetBottom() + TControl.AdjustToDPI(20));
+    SetStyle(csDropDownList);
+    AddItemArray(['Vambraces', 'Chaps', 'Body']);
+    SetItemIndex(2); // default to the third item
+  end;
+
+  Self.CreateVersionPanel(tab);
+  Self.CreateAntibanManager();
+  Self.CreateBankSettings();
+  Self.CreateWaspLibSettings();
+  Self.CreateAPISettings();
+
+  inherited;
+end;
+
+var
+  HideCrafterConfig: THideCrafterConfig;
+
+begin
+  if USE_GUI then
+    HideCrafterConfig.Run();
+
+  HideCrafter.Run(WLSettings.MaxActions, WLSettings.MaxTime);
+end.
