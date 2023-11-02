@@ -1,6 +1,6 @@
 # HideCrafter
 
-**Gain up to 400k crafting xp/h with HideCrafter. It supports all leather colors and armor types with an optional GUI and antiban.**
+Designed as a more focused alternative to the now-unsupported `wasp_combiner`, HideCrafter specializes in hide crafting, aiming to enhance both user experience and xp rates, with the potential to reach up to 400k crafting xp/h. The script is compatible with all leather colors and armor types and includes an optional GUI and antiban features.
 
 ## Quickstart
 - **Client**: 32-Bit Native OSRS
@@ -8,7 +8,7 @@
 - **Bank items**: Needle, threads, and leather (best if no scroll needed)
 
 ## Purpose
-The script was created to address the limitations of the previous `wasp_combiner` script, offering a dedicated solution for hide crafting with improved xp rates and usability.
+This script has been developed to fill the void left by `wasp_combiner`, emphasizing straightforward hide crafting to improve xp rates and ease of use.
 
 ## Installation
 *Note*: Replace `USERNAME` with your Windows username in the file paths.
@@ -24,13 +24,13 @@ The script was created to address the limitations of the previous `wasp_combiner
 3. Unzip and move `HideCrafter` to the Simba scripts directory.
 
 ## Crafting Tip
-- **Green d'hide body** for optimal xp (approx. 270k/h) and cost (under 20m for 99).
+Crafting **Green d'hide body** is recommended for an optimal balance of xp gain (approximately 270k/h) and cost efficiency (under 20m for 99 crafting).
 
 ## Script Goals
-- Further efficiency modes
-- Profit/Loss tracking
-- Collection checks
-- Automate leather trading
+- Add different efficiency modes
+- Implement profit/loss calculations
+- Introduce collection checks
+- Enable automatic leather trading
 
 ## Credits
-- Thanks to @prunodito!
+Thanks to @prunodito for their support!
