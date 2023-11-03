@@ -1,5 +1,5 @@
 program hidecrafter;
-{$DEFINE SCRIPT_REVISION := '5'}
+{$DEFINE SCRIPT_REVISION := '6'}
 {$I SRL-T/osr.simba}
 {$I WaspLib/osr.simba}
 
@@ -11,7 +11,7 @@ end;
 var
   WHAT_TO_CRAFT:    array of String            = ['Green', 'Body'];
   SLEEP_HOUR:       String                     = '01:00:00';
-  SLEEP_LENGTH:     Single                     = 8.15;
+  SLEEP_LENGTH:     Single                     = 8.15; // Hours
   USE_HUD_REPORT:   Boolean                    = False;
   USE_GUI:          Boolean                    = True;
   USE_ANITBAN:      Boolean                    = True;
@@ -100,6 +100,9 @@ begin
   Self.RSW.AdaptiveWalk := True;
   if Options.GetBrightnessLevel < 100 then
     Options.SetMaxBrightness;
+
+  Self.ActionProfit :=(ItemData.GetAverage(Self.FinalProduct.Item)) -
+  (ItemData.GetAverage(Self.LeatherMaterial.Item) * Self.Factor);
 end;
 
 function THideCrafter.MakeHide(): Boolean;
@@ -127,6 +130,7 @@ begin
     if WaitUntil(Inventory.CountItem(FinalProduct.Item) = 0, DEPOSIT_WAIT_MIN, DEPOSIT_WAIT_MAX) then
     begin
       Self.TotalActions += itemCount;
+      Self.TotalProfit := Self.TotalActions * Self.ActionProfit;
     end;
   end;
 end;
