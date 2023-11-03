@@ -1,5 +1,5 @@
 program hidecrafter;
-{$DEFINE SCRIPT_REVISION := '4'}
+{$DEFINE SCRIPT_REVISION := '5'}
 {$I SRL-T/osr.simba}
 {$I WaspLib/osr.simba}
 
@@ -11,6 +11,7 @@ end;
 var
   WHAT_TO_CRAFT:    array of String            = ['Green', 'Body'];
   SLEEP_HOUR:       String                     = '01:00:00';
+  SLEEP_LENGTH:     Single                     = 8.15;
   USE_HUD_REPORT:   Boolean                    = False;
   USE_GUI:          Boolean                    = True;
   USE_ANITBAN:      Boolean                    = True;
@@ -87,6 +88,7 @@ begin
   WLSettings.Breaks                 := USE_BREAKS;
   WLSettings.Sleep.Enabled          := USE_SLEEP;
   WLSettings.sleep.Hour             := SLEEP_HOUR;
+  WLSettings.sleep.Length           := SLEEP_LENGTH;
   WLSettings.RemoteInput.Enabled    := USE_REMOTE_INPUT;
   WLSettings.RemoteInput.HUDReport  := USE_HUD_REPORT;
   Mouse.Speed                       := Random(18,24);
@@ -137,8 +139,15 @@ end;
 
 function THideCrafter.HandleBankOpen(): EState;
 begin
-  if not Bank.ContainsItem(LeatherMaterial) or (Bank.CountItemStack(LeatherMaterial.Item) < Self.Factor) then
+  // First check if the bank does not contain the item
+  if not Bank.ContainsItem(LeatherMaterial) then
+    TerminateScript('Leather material not found in bank.');
+
+  // Then, if the item exists, check the stack count
+  if Bank.CountItemStack(LeatherMaterial.Item) < Self.Factor then
     TerminateScript('Not enough ' + LeatherMaterial.Item + ' in bank.');
+
+  // Proceed with further checks if the item exists and there is an adequate stack
   if Inventory.ContainsItem(Self.FinalProduct.Item) then Exit(EState.DEPOSIT_HIDE);
   if not Inventory.ContainsItem(Self.Thread.Item) then Exit(EState.WITHDRAW_THREAD);
   if not Inventory.ContainsItem(Self.Needle.Item) then Exit(EState.WITHDRAW_NEEDLE);
