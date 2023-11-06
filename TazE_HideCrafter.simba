@@ -1,5 +1,5 @@
 program hidecrafter;
-{$DEFINE SCRIPT_REVISION := '6'}
+{$DEFINE SCRIPT_REVISION := '7'}
 {$I SRL-T/osr.simba}
 {$I WaspLib/osr.simba}
 
@@ -30,7 +30,8 @@ const
 
 type
   EState = (LEVEL_UP,CLOSE_CONTEXT,OPEN_BANK,WITHDRAW_THREAD, WITHDRAW_NEEDLE,
-  WITHDRAW_LEATHER,DEPOSIT_HIDE, CLOSE_INTERFACE,CRAFT_HIDE, WAIT_CRAFT, OPEN_INVENTORY, END_SCRIPT);
+  WITHDRAW_LEATHER,DEPOSIT_HIDE, CLOSE_INTERFACE,CRAFT_HIDE, WAIT_CRAFT, OPEN_INVENTORY,
+  OUT_OF_SUPPLIES, OPEN_COLLECT, HANDLE_COLLECT, END_SCRIPT);
 
   TCurrentTask = record
     Color: String;
@@ -141,47 +142,57 @@ begin
             (Inventory.CountItem(LeatherMaterial.Item) >= self.Factor);
 end;
 
-function THideCrafter.HandleBankOpen(): EState;
-begin
-  // First check if the bank does not contain the item
-  if not Bank.ContainsItem(LeatherMaterial) then
-    TerminateScript('Leather material not found in bank.');
-
-  // Then, if the item exists, check the stack count
-  if Bank.CountItemStack(LeatherMaterial.Item) < Self.Factor then
-    TerminateScript('Not enough ' + LeatherMaterial.Item + ' in bank.');
-
-  // Proceed with further checks if the item exists and there is an adequate stack
-  if Inventory.ContainsItem(Self.FinalProduct.Item) then Exit(EState.DEPOSIT_HIDE);
-  if not Inventory.ContainsItem(Self.Thread.Item) then Exit(EState.WITHDRAW_THREAD);
-  if not Inventory.ContainsItem(Self.Needle.Item) then Exit(EState.WITHDRAW_NEEDLE);
-  if not (Inventory.CountItem(LeatherMaterial.Item) >= self.Factor) then Exit(EState.WITHDRAW_LEATHER);
-  Exit(EState.CLOSE_INTERFACE);
-end;
-
 function THideCrafter.GetState(): EState;
 begin
-  if WL.Activity.IsFinished() then Exit(EState.END_SCRIPT);
-  if Chat.LeveledUp() then begin
+  if WL.Activity.IsFinished() then
+    Exit(EState.END_SCRIPT);
+
+  if Chat.LeveledUp() then
+  begin
     Self.DoingTask := False;
     Exit(EState.LEVEL_UP);
+  end;
+
+  if Self.BankEmpty then
+  begin
+    if not CollectBox.IsOpen() then
+      Exit(EState.OPEN_COLLECT);
+
+    Self.CollectEmpty := not CollectBox.ContainsItem(LeatherMaterial.Item);
+    if Self.CollectEmpty then
+      Exit(EState.OUT_OF_SUPPLIES);
+
+    Exit(EState.HANDLE_COLLECT);
   end;
 
   if MainScreen.HasInterface() then
   begin
     DoingTask := False;
-    if Bank.IsOpen() then Exit(HandleBankOpen());
+    if Bank.IsOpen() then
+    begin
+      if Inventory.ContainsItem(Self.FinalProduct.Item) then
+        Exit(EState.DEPOSIT_HIDE);
+      if not Inventory.ContainsItem(Self.Thread.Item) then
+        Exit(EState.WITHDRAW_THREAD);
+      if not Inventory.ContainsItem(Self.Needle.Item) then
+        Exit(EState.WITHDRAW_NEEDLE);
+      if (Inventory.CountItem(LeatherMaterial.Item) < self.Factor) then
+        Exit(EState.WITHDRAW_LEATHER);
+    end
+    else if CollectBox.IsOpen() and not Self.CollectEmpty then
+      Exit(EState.HANDLE_COLLECT);
+
+    Exit(EState.CLOSE_INTERFACE);
   end;
 
   if CheckInventoryForItems then
   begin
-    if Self.DoingTask then Exit(EState.WAIT_CRAFT);
-    if not DoingTask then Exit(EState.CRAFT_HIDE);
+    if Self.DoingTask then Exit(EState.WAIT_CRAFT)
+    else Exit(EState.CRAFT_HIDE);
   end;
 
   Exit(EState.OPEN_BANK);
 end;
-
 
 procedure THideCrafter.Run(MaxActions: UInt32; MaxTime: UInt64);
 begin
@@ -191,16 +202,18 @@ begin
     Self.SetAction(ToStr(State));
     case State of
       EState.OPEN_BANK: Bank.WalkOpen();
-      EState.WITHDRAW_THREAD: Self.Withdraw(self.Thread);
-      EState.WITHDRAW_NEEDLE: Self.Withdraw(self.Needle);
-      EState.WITHDRAW_LEATHER: Self.Withdraw(self.LeatherMaterial);
+      EState.WITHDRAW_THREAD: Self.Withdraw(self.Thread, 2);            // Try 3 times
+      EState.WITHDRAW_NEEDLE: Self.Withdraw(self.Needle, 2);            // Try 3 times
+      EState.WITHDRAW_LEATHER: Self.Withdraw(self.LeatherMaterial, 2);  // Try 3 times
       EState.DEPOSIT_HIDE: Self.Deposit();
+      EState.OPEN_COLLECT: CollectBox.WalkOpen();
+      EState.HANDLE_COLLECT: HandleCollectBox([Self.LeatherMaterial.Item]);
       EState.OPEN_INVENTORY: Inventory.Open;
       EState.LEVEL_UP: Chat.HandleLevelUp();
       EState.CRAFT_HIDE: self.MakeHide();
       EState.WAIT_CRAFT: Self.DoingTask := XPBar.WaitXP(TASK_WAIT);
       EState.CLOSE_INTERFACE: MainScreen.CloseInterface(True);
-      EState.END_SCRIPT: Break;
+      EState.OUT_OF_SUPPLIES, EState.END_SCRIPT: Break;
     end;
     Self.DoAntiban();
   until Self.ShouldStop();
