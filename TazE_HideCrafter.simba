@@ -1,5 +1,5 @@
 program hidecrafter;
-{$DEFINE SCRIPT_REVISION := '7'}
+{$DEFINE SCRIPT_REVISION := '7.1'}
 {$I SRL-T/osr.simba}
 {$I WaspLib/osr.simba}
 
@@ -232,8 +232,7 @@ type
 
 procedure THideCrafterConfig.StartScript(sender: TObject); override;
 begin
-  HideCrafter.CurrentTask.Color := Self.ColorSelector.getText();
-  HideCrafter.CurrentTask.ArmorType := Self.ArmorSelector.getText();
+  WHAT_TO_CRAFT := [Self.ColorSelector.getText(), Self.ArmorSelector.getText()];
   inherited;
 end;
 
