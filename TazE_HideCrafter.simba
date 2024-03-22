@@ -1,12 +1,12 @@
-{$UNDEF SCRIPT_ID}{$DEFINE SCRIPT_ID := '62a113c1-e3fd-4709-8df5-aa685f5d8d65'}
-{$DEFINE SCRIPT_REVISION := '11'}
+{$DEFINE SCRIPT_ID := '62a113c1-e3fd-4709-8df5-aa685f5d8d65'}
+{$DEFINE SCRIPT_REVISION := '12'}
 {$I WaspLib/osr.simba}
 
 var //================DEFAULT SETTINGS==============================
   WHAT_TO_CRAFT:      array of String            = ['Green', 'Body'];
   USE_HUD_REPORT:     Boolean                    = False;
   USE_GUI:            Boolean                    = True;
-  LOGIN_PLAYER_INDEX: Int32                      = 1;
+  LOGIN_PLAYER_INDEX: Int32                      = 0;
 
 type
   EState = (LEVEL_UP,CLOSE_CONTEXT,OPEN_BANK,WITHDRAW_THREAD, WITHDRAW_NEEDLE,
@@ -24,6 +24,7 @@ type
     Needle,Thread,LeatherMaterial,FinalProduct: TRSBankItem;
     MakeOption: String;
     DoingTask: Boolean;
+    NeedleSlotCached, LeatherSlotCached: Int32;
     ItemCount, Factor: Integer;
   end;
 
@@ -58,7 +59,6 @@ end;
 procedure THideCrafter.Init(MaxActions: UInt32; MaxTime: UInt64); override;
 begin
   inherited;
-  WLSettings.SaveVideo.Enabled := True;
   Login.PlayerIndex := LOGIN_PLAYER_INDEX;
   WLSettings.RemoteInput.HUDReport  := USE_HUD_REPORT;
   Mouse.Speed                       := Random(20,24);
@@ -76,18 +76,47 @@ end;
 
 function THideCrafter.MakeHide(): Boolean;
 var
-  needleSlot, leatherSlot: Int32;
-  begin
-    XPBar.EarnedXP();
-    If Inventory.FindItem(Self.Needle.Item, needleSlot) then
-      If Inventory.FindItem(Self.LeatherMaterial.Item, leatherSlot) then
-        Inventory.Use(needleSlot, leatherSlot);
+  leatherSlots: TIntegerArray;
+  minDistance, currentDistance, dx, dy, i: Int32;
+begin
+  XPBar.EarnedXP();
 
-    if Make.IsOpen(3000) then
-     if Make.Select(Self.MakeOption, Make.QUANTITY_ALL, SRL.Dice(98.5))then
-        Result := WaitUntil(XPBar.EarnedXP(), 50, 3000);
-    HoverBank();
-    Self.DoingTask := Result;
+  // Check if cached slots still contain the correct items
+  if (Self.NeedleSlotCached < 0) or (Self.LeatherSlotCached < 0) or
+     (Inventory.Discover(Self.NeedleSlotCached).Find(Self.Needle.Item) = -1) or
+     (Inventory.Discover(Self.LeatherSlotCached).Find(Self.LeatherMaterial.Item) = -1) then
+  begin
+    if Inventory.FindItem(Self.Needle.Item, Self.NeedleSlotCached) then
+    begin
+      Inventory.FindItem(Self.LeatherMaterial.Item, leatherSlots);
+      minDistance := High(Int32);
+      Self.LeatherSlotCached := -1;
+
+      for i := 0 to High(leatherSlots) do
+      begin
+        dx := Abs((Self.NeedleSlotCached mod 4) - (leatherSlots[i] mod 4));
+        dy := Abs((Self.NeedleSlotCached div 4) - (leatherSlots[i] div 4));
+        currentDistance := dx + dy;
+
+        if currentDistance < minDistance then
+        begin
+          minDistance := currentDistance;
+          Self.LeatherSlotCached := leatherSlots[i];
+        end;
+      end;
+    end;
+  end;
+
+  // Use needle on the closest leather
+  if Self.LeatherSlotCached >= 0 then
+    Inventory.Use(Self.NeedleSlotCached, Self.LeatherSlotCached);
+
+  if Make.IsOpen(3000) then
+    if Make.Select(Self.MakeOption, Make.QUANTITY_ALL, SRL.Dice(98.5)) then
+      Result := WaitUntil(XPBar.EarnedXP(), 50, 3000);
+
+  HoverBank();
+  Self.DoingTask := Result;
 end;
 
 function THideCrafter.Deposit(): Boolean;
