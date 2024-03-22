@@ -1,32 +1,12 @@
-program hidecrafter;
-{$DEFINE SCRIPT_REVISION := '7.1'}
-{$I SRL-T/osr.simba}
+{$UNDEF SCRIPT_ID}{$DEFINE SCRIPT_ID := '62a113c1-e3fd-4709-8df5-aa685f5d8d65'}
+{$DEFINE SCRIPT_REVISION := '11'}
 {$I WaspLib/osr.simba}
 
-begin
-  Login.PlayerIndex := 0;
-end;
-
-//=============DEFAULT SETTINGS==============
-var
-  WHAT_TO_CRAFT:    array of String            = ['Green', 'Body'];
-  SLEEP_HOUR:       String                     = '01:00:00';
-  SLEEP_LENGTH:     Single                     = 8.15; // Hours
-  USE_HUD_REPORT:   Boolean                    = False;
-  USE_GUI:          Boolean                    = True;
-  USE_ANITBAN:      Boolean                    = True;
-  USE_BREAKS:       Boolean                    = True;
-  USE_SLEEP:        Boolean                    = True;
-  USE_REMOTE_INPUT: Boolean                    = True;
-
-const
-  // Timing Constants (milliseconds)
-  DEPOSIT_WAIT_MIN = 50;
-  DEPOSIT_WAIT_MAX = 2000;
-  MAKE_WAIT_MIN    = 50;
-  MAKE_WAIT_MAX    = 3000;
-  TASK_WAIT        = 5000;
-
+var //================DEFAULT SETTINGS==============================
+  WHAT_TO_CRAFT:      array of String            = ['Green', 'Body'];
+  USE_HUD_REPORT:     Boolean                    = False;
+  USE_GUI:            Boolean                    = True;
+  LOGIN_PLAYER_INDEX: Int32                      = 1;
 
 type
   EState = (LEVEL_UP,CLOSE_CONTEXT,OPEN_BANK,WITHDRAW_THREAD, WITHDRAW_NEEDLE,
@@ -41,13 +21,10 @@ type
   THideCrafter = record(TBaseBankScript)
     State: EState;
     CurrentTask: TCurrentTask;
-    Needle,Thread,
-    LeatherMaterial,
-    FinalProduct: TRSBankItem;
+    Needle,Thread,LeatherMaterial,FinalProduct: TRSBankItem;
     MakeOption: String;
     DoingTask: Boolean;
-    ItemCount: Integer;
-    Factor: Integer;
+    ItemCount, Factor: Integer;
   end;
 
 procedure THideCrafter.SetupItems();
@@ -57,8 +34,6 @@ begin
   Needle :=  TRSBankItem.Setup('Needle', 1 , False);
   Thread := TRSBankItem.Setup('Thread', -1 , False);
   CurrentTask := [WHAT_TO_CRAFT[0], WHAT_TO_CRAFT[1]];
-
-  // Convert to lowercase
   CurrentTask.ArmorType := LowerCase(CurrentTask.ArmorType);
 
   if CurrentTask.ArmorType = 'vambraces' then self.Factor := 1
@@ -81,24 +56,17 @@ begin
 end;
 
 procedure THideCrafter.Init(MaxActions: UInt32; MaxTime: UInt64); override;
-var
-  MyPos: TPoint;
 begin
   inherited;
-  WLSettings.Antiban.Enabled        := USE_ANITBAN;
-  WLSettings.Breaks                 := USE_BREAKS;
-  WLSettings.Sleep.Enabled          := USE_SLEEP;
-  WLSettings.sleep.Hour             := SLEEP_HOUR;
-  WLSettings.sleep.Length           := SLEEP_LENGTH;
-  WLSettings.RemoteInput.Enabled    := USE_REMOTE_INPUT;
+  WLSettings.SaveVideo.Enabled := True;
+  Login.PlayerIndex := LOGIN_PLAYER_INDEX;
   WLSettings.RemoteInput.HUDReport  := USE_HUD_REPORT;
-  Mouse.Speed                       := Random(18,24);
+  Mouse.Speed                       := Random(20,24);
+  Self.DisableDebugging := True;
   Mouse.Distribution                := MOUSE_DISTRIBUTION_GAUSS;
-  Self.PrintTimer.Init(2 * ONE_MINUTE);
+  Self.PrintTimer.Init(5 * ONE_SECOND);
   Self.RSW.SetupNamedRegion();
   Self.SetupItems();
-  MyPos := Self.RSW.GetMyPos();
-  Self.RSW.AdaptiveWalk := True;
   if Options.GetBrightnessLevel < 100 then
     Options.SetMaxBrightness;
 
@@ -115,9 +83,9 @@ var
       If Inventory.FindItem(Self.LeatherMaterial.Item, leatherSlot) then
         Inventory.Use(needleSlot, leatherSlot);
 
-    if Make.IsOpen(MAKE_WAIT_MAX) then
+    if Make.IsOpen(3000) then
      if Make.Select(Self.MakeOption, Make.QUANTITY_ALL, SRL.Dice(98.5))then
-        Result := WaitUntil(XPBar.EarnedXP(), MAKE_WAIT_MIN, MAKE_WAIT_MAX);
+        Result := WaitUntil(XPBar.EarnedXP(), 50, 3000);
     HoverBank();
     Self.DoingTask := Result;
 end;
@@ -128,7 +96,7 @@ var
 begin
   if Result := bank.DepositItem(FinalProduct, True) then
   begin
-    if WaitUntil(Inventory.CountItem(FinalProduct.Item) = 0, DEPOSIT_WAIT_MIN, DEPOSIT_WAIT_MAX) then
+    if WaitUntil(Inventory.CountItem(FinalProduct.Item) = 0, 50, 2000) then
     begin
       Self.TotalActions += itemCount;
       Self.TotalProfit := Self.TotalActions * Self.ActionProfit;
@@ -199,19 +167,21 @@ begin
   Self.Init(MaxActions, MaxTime);
   repeat
     State := Self.GetState();
+    if Self.PrintTimer.IsFinished() then
+      ClearDebug();
     Self.SetAction(ToStr(State));
     case State of
-      EState.OPEN_BANK: Bank.WalkOpen();
-      EState.WITHDRAW_THREAD: Self.Withdraw(self.Thread, 2);            // Try 3 times
-      EState.WITHDRAW_NEEDLE: Self.Withdraw(self.Needle, 2);            // Try 3 times
-      EState.WITHDRAW_LEATHER: Self.Withdraw(self.LeatherMaterial, 2);  // Try 3 times
+      EState.OPEN_BANK: Bank.Open();
+      EState.WITHDRAW_THREAD: Self.Withdraw(self.Thread);
+      EState.WITHDRAW_NEEDLE: Self.Withdraw(self.Needle);
+      EState.WITHDRAW_LEATHER: Self.Withdraw(self.LeatherMaterial);
       EState.DEPOSIT_HIDE: Self.Deposit();
-      EState.OPEN_COLLECT: CollectBox.WalkOpen();
-      EState.HANDLE_COLLECT: HandleCollectBox([Self.LeatherMaterial.Item]);
+      EState.OPEN_COLLECT: CollectBox.Open();
+      EState.HANDLE_COLLECT: HandleCollectBox([Self.LeatherMaterial.Item, Self.Thread.Item]);
       EState.OPEN_INVENTORY: Inventory.Open;
       EState.LEVEL_UP: Chat.HandleLevelUp();
       EState.CRAFT_HIDE: self.MakeHide();
-      EState.WAIT_CRAFT: Self.DoingTask := XPBar.WaitXP(TASK_WAIT);
+      EState.WAIT_CRAFT: Self.DoingTask := XPBar.WaitXP(5000);
       EState.CLOSE_INTERFACE: MainScreen.CloseInterface(True);
       EState.OUT_OF_SUPPLIES, EState.END_SCRIPT: Break;
     end;
@@ -284,6 +254,5 @@ var
 begin
   if USE_GUI then
     HideCrafterConfig.Run();
-
   HideCrafter.Run(WLSettings.MaxActions, WLSettings.MaxTime);
 end.
