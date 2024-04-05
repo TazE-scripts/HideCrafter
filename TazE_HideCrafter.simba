@@ -1,12 +1,15 @@
 {$DEFINE SCRIPT_ID := '62a113c1-e3fd-4709-8df5-aa685f5d8d65'}
-{$DEFINE SCRIPT_REVISION := '12'}
+{$DEFINE SCRIPT_REVISION := '13'}
 {$I WaspLib/osr.simba}
+
+begin // Set default account
+  Login.PlayerIndex := 0;
+end;
 
 var //================DEFAULT SETTINGS==============================
   WHAT_TO_CRAFT:      array of String            = ['Green', 'Body'];
   USE_HUD_REPORT:     Boolean                    = False;
   USE_GUI:            Boolean                    = True;
-  LOGIN_PLAYER_INDEX: Int32                      = 0;
 
 type
   EState = (LEVEL_UP,CLOSE_CONTEXT,OPEN_BANK,WITHDRAW_THREAD, WITHDRAW_NEEDLE,
@@ -59,10 +62,9 @@ end;
 procedure THideCrafter.Init(MaxActions: UInt32; MaxTime: UInt64); override;
 begin
   inherited;
-  Login.PlayerIndex := LOGIN_PLAYER_INDEX;
   WLSettings.RemoteInput.HUDReport  := USE_HUD_REPORT;
   Mouse.Speed                       := Random(20,24);
-  Self.DisableDebugging := True;
+  Self.DisableDebugging             := False;
   Mouse.Distribution                := MOUSE_DISTRIBUTION_GAUSS;
   Self.PrintTimer.Init(5 * ONE_SECOND);
   Self.RSW.SetupNamedRegion();
