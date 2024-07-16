@@ -1,15 +1,6 @@
 {$DEFINE SCRIPT_ID := '62a113c1-e3fd-4709-8df5-aa685f5d8d65'}
-{$DEFINE SCRIPT_REVISION := '13'}
+{$DEFINE SCRIPT_REVISION := '14'}
 {$I WaspLib/osr.simba}
-
-begin // Set default account
-  Login.PlayerIndex := 0;
-end;
-
-var //================DEFAULT SETTINGS==============================
-  WHAT_TO_CRAFT:      array of String            = ['Green', 'Body'];
-  USE_HUD_REPORT:     Boolean                    = False;
-  USE_GUI:            Boolean                    = True;
 
 type
   EState = (LEVEL_UP,CLOSE_CONTEXT,OPEN_BANK,WITHDRAW_THREAD, WITHDRAW_NEEDLE,
@@ -37,7 +28,6 @@ var
 begin
   Needle :=  TRSBankItem.Setup('Needle', 1 , False);
   Thread := TRSBankItem.Setup('Thread', -1 , False);
-  CurrentTask := [WHAT_TO_CRAFT[0], WHAT_TO_CRAFT[1]];
   CurrentTask.ArmorType := LowerCase(CurrentTask.ArmorType);
 
   if CurrentTask.ArmorType = 'vambraces' then self.Factor := 1
@@ -54,6 +44,7 @@ end;
 procedure TAntiban.Setup(); override;
 begin
   Self.Skills := [ERSSkill.CRAFTING, ERSSkill.TOTAL];
+  Self.HoverMSPlayers;
   Self.MinZoom := 15;
   Self.MaxZoom := 85;
   inherited;
@@ -62,10 +53,8 @@ end;
 procedure THideCrafter.Init(MaxActions: UInt32; MaxTime: UInt64); override;
 begin
   inherited;
-  WLSettings.RemoteInput.HUDReport  := USE_HUD_REPORT;
-  Mouse.Speed                       := Random(20,24);
-  Self.DisableDebugging             := False;
-  Mouse.Distribution                := MOUSE_DISTRIBUTION_GAUSS;
+  Mouse.Speed := Random(20,24);
+  Self.DisableDebugging := False;
   Self.PrintTimer.Init(5 * ONE_SECOND);
   Self.RSW.SetupNamedRegion();
   Self.SetupItems();
@@ -126,13 +115,11 @@ var
   itemCount: Int32 := Inventory.CountItem(FinalProduct.Item);
 begin
   if Result := bank.DepositItem(FinalProduct, True) then
-  begin
     if WaitUntil(Inventory.CountItem(FinalProduct.Item) = 0, 50, 2000) then
     begin
       Self.TotalActions += itemCount;
       Self.TotalProfit := Self.TotalActions * Self.ActionProfit;
     end;
-  end;
 end;
 
 function THideCrafter.CheckInventoryForItems(): Boolean;
@@ -233,7 +220,8 @@ type
 
 procedure THideCrafterConfig.StartScript(sender: TObject); override;
 begin
-  WHAT_TO_CRAFT := [Self.ColorSelector.getText(), Self.ArmorSelector.getText()];
+  HideCrafter.CurrentTask.Color     := Self.ColorSelector.getText();
+  HideCrafter.CurrentTask.ArmorType := Self.ArmorSelector.getText();
   inherited;
 end;
 
@@ -283,7 +271,6 @@ var
   HideCrafterConfig: THideCrafterConfig;
 
 begin
-  if USE_GUI then
-    HideCrafterConfig.Run();
+  HideCrafterConfig.Run();
   HideCrafter.Run(WLSettings.MaxActions, WLSettings.MaxTime);
 end.
