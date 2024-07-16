@@ -44,7 +44,6 @@ end;
 procedure TAntiban.Setup(); override;
 begin
   Self.Skills := [ERSSkill.CRAFTING, ERSSkill.TOTAL];
-  Self.HoverMSPlayers;
   Self.MinZoom := 15;
   Self.MaxZoom := 85;
   inherited;
@@ -54,7 +53,6 @@ procedure THideCrafter.Init(MaxActions: UInt32; MaxTime: UInt64); override;
 begin
   inherited;
   Mouse.Speed := Random(20,24);
-  Self.DisableDebugging := False;
   Self.PrintTimer.Init(5 * ONE_SECOND);
   Self.RSW.SetupNamedRegion();
   Self.SetupItems();
