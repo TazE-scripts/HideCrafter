@@ -1,5 +1,5 @@
 {$DEFINE SCRIPT_ID := '62a113c1-e3fd-4709-8df5-aa685f5d8d65'}
-{$DEFINE SCRIPT_REVISION := '14'}
+{$DEFINE SCRIPT_REVISION := '15'}
 {$I WaspLib/osr.simba}
 
 type
@@ -12,11 +12,14 @@ type
     ArmorType: String;
   end;
 
+  TNeedleType = (NORMAL, COSTUME);
+
   THideCrafter = record(TBaseBankScript)
     State: EState;
     CurrentTask: TCurrentTask;
     Needle,Thread,LeatherMaterial,FinalProduct: TRSBankItem;
     MakeOption: String;
+    NeedleType: TNeedleType;
     DoingTask: Boolean;
     NeedleSlotCached, LeatherSlotCached: Int32;
     ItemCount, Factor: Integer;
@@ -26,19 +29,28 @@ procedure THideCrafter.SetupItems();
 var
   maxProducts: Integer;
 begin
-  Needle :=  TRSBankItem.Setup('Needle', 1 , False);
-  Thread := TRSBankItem.Setup('Thread', -1 , False);
   CurrentTask.ArmorType := LowerCase(CurrentTask.ArmorType);
-
   if CurrentTask.ArmorType = 'vambraces' then self.Factor := 1
   else if CurrentTask.ArmorType = 'chaps' then self.Factor := 2
   else if CurrentTask.ArmorType = 'body' then self.Factor := 3
   else TerminateScript('Armor type not detected');
 
-  maxProducts := Trunc(26 / self.Factor);
+  if Self.NeedleType = NORMAL then
+    begin
+      Needle :=  TRSBankItem.Setup('Needle', 1 , False);
+      Thread := TRSBankItem.Setup('Thread', -1 , False);
+      maxProducts := Trunc(26 / self.Factor);
+    end
+  else
+    begin
+      Needle :=  TRSBankItem.Setup('Costume needle', 1 , False);
+      maxProducts := Trunc(27 / self.Factor);
+    end;
+
+
   LeatherMaterial := TRSBankItem.Setup(CurrentTask.Color + ' dragon leather', maxProducts * self.Factor, False);
   MakeOption := CurrentTask.Color + " dragonhide " + CurrentTask.ArmorType;
-  FinalProduct := TRSBankItem.Setup(CurrentTask.Color + " d'hide " + CurrentTask.ArmorType, maxProducts * self.Factor);
+  FinalProduct := TRSBankItem.Setup(CurrentTask.Color + ' d''hide ' + CurrentTask.ArmorType, maxProducts * self.Factor);
 end;
 
 procedure TAntiban.Setup(); override;
@@ -121,8 +133,15 @@ begin
 end;
 
 function THideCrafter.CheckInventoryForItems(): Boolean;
+var
+  items: TRSItemArray;
 begin
-  Result := Inventory.ContainsAll([Self.Needle.Item, Self.Thread.Item, Self.LeatherMaterial.Item]) and
+  if Self.NeedleType = NORMAL then
+    items := [Self.Needle.Item, Self.Thread.Item, Self.LeatherMaterial.Item]
+  else
+    items := [Self.Needle.Item, Self.LeatherMaterial.Item];
+
+  Result := Inventory.ContainsAll(items) and
             (Inventory.CountItem(LeatherMaterial.Item) >= self.Factor);
 end;
 
@@ -149,14 +168,14 @@ begin
     Exit(EState.HANDLE_COLLECT);
   end;
 
-  if MainScreen.HasInterface() then
+  if RSInterface.IsOpen() then
   begin
     DoingTask := False;
     if Bank.IsOpen() then
     begin
       if Inventory.ContainsItem(Self.FinalProduct.Item) then
         Exit(EState.DEPOSIT_HIDE);
-      if not Inventory.ContainsItem(Self.Thread.Item) then
+      if (Self.NeedleType = NORMAL) and not Inventory.ContainsItem(Self.Thread.Item) then
         Exit(EState.WITHDRAW_THREAD);
       if not Inventory.ContainsItem(Self.Needle.Item) then
         Exit(EState.WITHDRAW_NEEDLE);
@@ -198,7 +217,7 @@ begin
       EState.LEVEL_UP: Chat.HandleLevelUp();
       EState.CRAFT_HIDE: self.MakeHide();
       EState.WAIT_CRAFT: Self.DoingTask := XPBar.WaitXP(5000);
-      EState.CLOSE_INTERFACE: MainScreen.CloseInterface(True);
+      EState.CLOSE_INTERFACE: RSInterface.Close(True);
       EState.OUT_OF_SUPPLIES, EState.END_SCRIPT: Break;
     end;
     Self.DoAntiban();
@@ -212,20 +231,26 @@ var
 
 type
   THideCrafterConfig = record(TScriptForm)
-    ColorSelector: TLabeledCombobox;
-    ArmorSelector: TLabeledCombobox;
+    ColorSelector, ArmorSelector, NeedleSelector: TLabeledCombobox;
   end;
 
 procedure THideCrafterConfig.StartScript(sender: TObject); override;
 begin
   HideCrafter.CurrentTask.Color     := Self.ColorSelector.getText();
   HideCrafter.CurrentTask.ArmorType := Self.ArmorSelector.getText();
+
+  if Self.NeedleSelector.getText() = 'NORMAL' then
+    HideCrafter.NeedleType := TNeedleType.NORMAL
+  else if Self.NeedleSelector.getText() = 'COSTUME' then
+    HideCrafter.NeedleType := TNeedleType.COSTUME;
+
   inherited;
 end;
 
 procedure THideCrafterConfig.Run(); override;
 var
   tab: TTabSheet;
+  versionPanel: TPanel;
 begin
   Self.Setup('HideCrafter Config');
   Self.Start.SetOnClick(@Self.StartScript);
@@ -238,25 +263,43 @@ begin
   begin
     Create(tab);
     SetCaption('Leather color:');
-    SetLeft(TControl.AdjustToDPI(50));
-    SetTop(TControl.AdjustToDPI(200));
+    SetLeft(TControl.AdjustToDPI(30));
+    SetTop(TControl.AdjustToDPI(150));
     SetStyle(csDropDownList);
     AddItemArray(['Green', 'Blue', 'Red', 'Black']);
     SetItemIndex(0); // default to the first item
   end;
 
-  with Self.ArmorSelector do  // Corrected from ColorSelector to ArmorSelector
+  with Self.ArmorSelector do
   begin
     Create(tab);
     SetCaption('Armor type:');
-    SetLeft(TControl.AdjustToDPI(50));
-    SetTop(Self.ColorSelector.GetBottom() + TControl.AdjustToDPI(20));
+    SetLeft(Self.ColorSelector.GetRight() + TControl.AdjustToDPI(10));
+    SetTop(Self.ColorSelector.GetTop());
     SetStyle(csDropDownList);
     AddItemArray(['Vambraces', 'Chaps', 'Body']);
-    SetItemIndex(2); // default to the third item
+    SetItemIndex(2);
   end;
 
-  Self.CreateVersionPanel(tab);
+  with Self.NeedleSelector do
+  begin
+    Create(tab);
+    SetCaption('Needle:');
+    SetLeft(Self.ArmorSelector.GetRight() + TControl.AdjustToDPI(10));
+    SetTop(Self.ColorSelector.GetTop());
+    SetStyle(csDropDownList);
+    AddItemArray(['NORMAL', 'COSTUME']);
+    SetTooltip('Costume needle requires no thread');
+    SetItemIndex(0);
+  end;
+
+  // Create and position the version panel
+  versionPanel := Self.CreateVersionPanel(tab);
+  versionPanel.SetAlign(alNone);
+  versionPanel.SetLeft(TControl.AdjustToDPI(30));
+  versionPanel.SetTop(Self.NeedleSelector.GetBottom() + TControl.AdjustToDPI(20));
+  versionPanel.setHeight(TControl.AdjustToDPI(45));
+
   Self.CreateAntibanManager();
   Self.CreateBankSettings();
   Self.CreateWaspLibSettings();
@@ -269,6 +312,7 @@ var
   HideCrafterConfig: THideCrafterConfig;
 
 begin
+  RSClient.RemoteInput.EnableRealInput;
   HideCrafterConfig.Run();
   HideCrafter.Run(WLSettings.MaxActions, WLSettings.MaxTime);
 end.
